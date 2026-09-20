@@ -1,7 +1,7 @@
 [
     {
         "name": "_ga_B9CY1C9VBC",
-        "value": "GS2.1.s1789928484$o2$g1$t1789928498$j46$l0$h0",
+        "value": "GS2.1.s1789928484$o2$g1$t1789928775$j5$l0$h0",
         "domain": ".mozilla.org",
         "hostOnly": false,
         "path": "/",
@@ -11,7 +11,7 @@
         "session": false,
         "firstPartyDomain": "",
         "partitionKey": null,
-        "expirationDate": 1824488498.258,
+        "expirationDate": 1824488775.266,
         "storeId": null
     },
     {
@@ -26,7 +26,7 @@
         "session": false,
         "firstPartyDomain": "",
         "partitionKey": null,
-        "expirationDate": 1824488485.044,
+        "expirationDate": 1824488720.526,
         "storeId": null
     }
 ]
