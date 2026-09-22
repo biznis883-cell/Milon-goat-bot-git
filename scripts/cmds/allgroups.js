@@ -1,135 +1,69 @@
-const axios = require("axios");
-
 module.exports = {
   config: {
     name: "allgroups",
-    version: "1.0.0",
-    role: 2, // Admin only
+    version: "1.0.1",
+    role: 2,
     author: "Milon",
-    description: "সবগুলো গ্রুপের লিস্ট দেখাবে এবং সেখান থেকে লিভ বা ব্যান করা যাবে",
+    description: "List the bot's groups and leave or ban a selected group",
     category: "admin",
     guide: "{pn}",
     countDown: 5
   },
 
   onStart: async function ({ api, event, message }) {
-    let threadList = await api.getThreadList(50, null, ["INBOX"]);
-    let list = threadList.filter(group => group.isSubscribed && group.isGroup);
+    const threadList = await api.getThreadList(50, null, ["INBOX"]);
+    const groups = (threadList || []).filter(group => group.isSubscribed && group.isGroup);
 
-    let msg = "";
-    let groupid = [];
-    let i = 1;
+    if (!groups.length)
+      return message.reply("No groups were found.");
 
-    for (const group of list) {
-      msg += `${i++}. ${group.name}\nID: ${group.threadID}\nMembers: ${group.participantIDs.length}\n\n`;
-      groupid.push(group.threadID);
-    }
-
-    return message.reply(msg + 'Reply with "out <number>" or "ban <number>" to take action.', (err, info) => {
-      global.GoatBot.onReply.set(info.messageID, {
-        commandName: this.config.name,
-        messageID: info.messageID,
-        author: event.senderID,
-        groupid
-      });
+    const groupIDs = [];
+    const lines = groups.map((group, index) => {
+      groupIDs.push(group.threadID);
+      return `${index + 1}. ${group.name || "Unnamed group"}\nID: ${group.threadID}\nMembers: ${(group.participantIDs || []).length}`;
     });
+
+    return message.reply(
+      `${lines.join("\n\n")}\n\nReply with "out <number>" or "ban <number>" to take action.`,
+      (err, info) => {
+        if (err || !info?.messageID) return;
+        global.GoatBot.onReply.set(info.messageID, {
+          commandName: "allgroups",
+          messageID: info.messageID,
+          author: event.senderID,
+          groupIDs
+        });
+      }
+    );
   },
 
   onReply: async function ({ api, event, Reply, message, Threads }) {
-    const { author, groupid, messageID } = Reply;
-    if (event.senderID != author) return;
+    if (String(event.senderID) !== String(Reply.author))
+      return;
 
-    const args = event.body.split(" ");
-    const action = args[0].toLowerCase();
-    const index = parseInt(args[1]) - 1;
-    const targetID = groupid[index];
+    const [action, number] = String(event.body || "").trim().toLowerCase().split(/\s+/);
+    const index = Number.parseInt(number, 10) - 1;
+    const targetID = Reply.groupIDs?.[index];
 
-    if (!targetID) return message.reply("সঠিক সিরিয়াল নম্বর দিন।");
+    if (!targetID || !["out", "ban"].includes(action))
+      return message.reply('Reply with "out <number>" or "ban <number>".');
 
     if (action === "out") {
       try {
         await api.removeUserFromGroup(api.getCurrentUserID(), targetID);
-        return message.reply(`সফলভাবে ${targetID} আইডি থেকে বের হয়ে গেছি।`);
-      } catch (e) {
-        return message.reply("লিভ নিতে সমস্যা হচ্ছে।");
+        return message.reply(`Successfully left group ${targetID}.`);
+      } catch (error) {
+        console.error("[allgroups] Leave failed:", error.message);
+        return message.reply("Could not leave that group.");
       }
     }
 
-    if (action === "ban") {
-      try {
-        // GoatBot এর Threads ডাটাবেস অনুযায়ী ব্যান
-        await Threads.setData(targetID, { data: { banned: true } });
-        return message.reply(`সফলভাবে গ্রুপ আইডি ${targetID} ব্যান করা হয়েছে।`);
-      } catch (e) {
-        return message.reply("ব্যান করতে সমস্যা হয়েছে।");
-      }
-    }
-  }
-};.cmd install allgroups.js const axios = require("axios");
-
-module.exports = {
-  config: {
-    name: "allgroups",
-    version: "1.0.0",
-    role: 2, // Admin only
-    author: "Milon",
-    description: "সবগুলো গ্রুপের লিস্ট দেখাবে এবং সেখান থেকে লিভ বা ব্যান করা যাবে",
-    category: "admin",
-    guide: "{pn}",
-    countDown: 5
-  },
-
-  onStart: async function ({ api, event, message }) {
-    let threadList = await api.getThreadList(50, null, ["INBOX"]);
-    let list = threadList.filter(group => group.isSubscribed && group.isGroup);
-
-    let msg = "";
-    let groupid = [];
-    let i = 1;
-
-    for (const group of list) {
-      msg += `${i++}. ${group.name}\nID: ${group.threadID}\nMembers: ${group.participantIDs.length}\n\n`;
-      groupid.push(group.threadID);
-    }
-
-    return message.reply(msg + 'Reply with "out <number>" or "ban <number>" to take action.', (err, info) => {
-      global.GoatBot.onReply.set(info.messageID, {
-        commandName: this.config.name,
-        messageID: info.messageID,
-        author: event.senderID,
-        groupid
-      });
-    });
-  },
-
-  onReply: async function ({ api, event, Reply, message, Threads }) {
-    const { author, groupid, messageID } = Reply;
-    if (event.senderID != author) return;
-
-    const args = event.body.split(" ");
-    const action = args[0].toLowerCase();
-    const index = parseInt(args[1]) - 1;
-    const targetID = groupid[index];
-
-    if (!targetID) return message.reply("সঠিক সিরিয়াল নম্বর দিন।");
-
-    if (action === "out") {
-      try {
-        await api.removeUserFromGroup(api.getCurrentUserID(), targetID);
-        return message.reply(`সফলভাবে ${targetID} আইডি থেকে বের হয়ে গেছি।`);
-      } catch (e) {
-        return message.reply("লিভ নিতে সমস্যা হচ্ছে।");
-      }
-    }
-
-    if (action === "ban") {
-      try {
-        // GoatBot এর Threads ডাটাবেস অনুযায়ী ব্যান
-        await Threads.setData(targetID, { data: { banned: true } });
-        return message.reply(`সফলভাবে গ্রুপ আইডি ${targetID} ব্যান করা হয়েছে।`);
-      } catch (e) {
-        return message.reply("ব্যান করতে সমস্যা হয়েছে।");
-      }
+    try {
+      await Threads.setData(targetID, { data: { banned: true } });
+      return message.reply(`Group ${targetID} was banned successfully.`);
+    } catch (error) {
+      console.error("[allgroups] Ban failed:", error.message);
+      return message.reply("Could not ban that group.");
     }
   }
 };
