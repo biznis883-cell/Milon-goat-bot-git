@@ -4,18 +4,15 @@ const { commands } = global.GoatBot;
 
 let xfont = null;
 let yfont = null;
-let categoryEmoji = null;
 
 async function loadResources() {
   try {
-    const [x, y, c] = await Promise.all([
+    const [x, y] = await Promise.all([
       axios.get("https://raw.githubusercontent.com/Saim-x69x/sakura/main/xfont.json"),
-      axios.get("https://raw.githubusercontent.com/Saim-x69x/sakura/main/yfont.json"),
-      axios.get("https://raw.githubusercontent.com/Saim-x69x/sakura/main/category.json")
+      axios.get("https://raw.githubusercontent.com/Saim-x69x/sakura/main/yfont.json")
     ]);
     xfont = x.data;
     yfont = y.data;
-    categoryEmoji = c.data;
   } catch (e) {
     console.error("[HELP] Resource load failed");
   }
@@ -27,15 +24,31 @@ function fontConvert(text, type = "command") {
   return text.split("").map(c => map[c] || c).join("");
 }
 
-function getCategoryEmoji(cat) {
-  return categoryEmoji?.[cat.toLowerCase()] || "⦿";
-}
-
 function roleText(role) {
+  if (typeof role !== "number") {
+    role = getRequiredRole({ config: { role } });
+  }
+
   if (role === 0) return "👤 User";
   if (role === 1) return "👑 Group Admin";
   if (role === 2) return "🤖 Bot Admin";
   return "Unknown";
+}
+
+function getRequiredRole(command) {
+  const configuredRole = command?.config?.role;
+
+  if (typeof configuredRole === "number") return configuredRole;
+
+  if (configuredRole && typeof configuredRole === "object") {
+    const roles = Object.values(configuredRole)
+      .filter(value => Number.isFinite(Number(value)))
+      .map(Number);
+
+    return roles.length ? Math.max(...roles) : 0;
+  }
+
+  return 0;
 }
 
 function findCommand(name) {
@@ -47,6 +60,22 @@ function findCommand(name) {
     if (typeof a === "string" && a === name) return cmd;
   }
   return null;
+}
+
+function formatCommandRows(commandNames) {
+  const rows = [];
+  const columnWidth = 30;
+
+  for (let i = 0; i < commandNames.length; i += 2) {
+    const left = `𝘾𝙢𝙙. ${fontConvert(commandNames[i])}`;
+    const right = commandNames[i + 1]
+      ? `𝘾𝙢𝙙. ${fontConvert(commandNames[i + 1])}`
+      : "";
+
+    rows.push(`${left.padEnd(columnWidth)}${right}`.trimEnd());
+  }
+
+  return rows.join("\n") || "— لا توجد أوامر متاحة —";
 }
 
 module.exports = {
@@ -64,19 +93,10 @@ module.exports = {
   },
 
   onStart: async function ({ message, args, event, role }) {
-    if (!xfont || !yfont || !categoryEmoji) await loadResources();
+    if (!xfont || !yfont) await loadResources();
 
     const prefix = getPrefix(event.threadID);
     const input = args.join(" ").trim();
-
-    // Collect all commands and group by category
-    const categoriesMap = {};
-    for (const [name, cmd] of commands) {
-      if (!cmd?.config || cmd.config.role > role) continue;
-      const cat = (cmd.config.category || "UNCATEGORIZED").toLowerCase();
-      if (!categoriesMap[cat]) categoriesMap[cat] = [];
-      categoriesMap[cat].push(name);
-    }
 
     /* ───── Single Command Info View ───── */
     if (input) {
@@ -94,7 +114,7 @@ module.exports = {
 🗡️ 𝗡𝗮𝗺𝗲 » ${c.name}
 📝 𝗗𝗲𝘀𝗰 » ${c.longDescription || c.shortDescription || "N/A"}
 🧩 𝗨𝘀𝗮𝗴𝗲 » ${usage}
-📦 𝗖𝗮𝘁𝗲𝗴𝗼𝗿𝘆 » ${c.category.toUpperCase()}
+📦 𝗖𝗮𝘁𝗲𝗴𝗼𝗿𝘆 » ${(c.category || "UNCATEGORIZED").toUpperCase()}
 ⏱️ 𝗖𝗼𝗼𝗹𝗱𝗼𝘄𝗻 » ${c.countDown || 5}s
 🔒 𝗣𝗲𝗿𝗺𝗶𝘀𝘀𝗶𝗼𝗻 » ${roleText(c.role)}
 ✨ 𝗖𝗿𝗲𝗱𝗶𝘁𝘀 » ${c.author || "𝗠𝗶𝗹𝗼𝗻 𝗛𝗮𝘀𝗮𝗻"}`;
@@ -103,26 +123,36 @@ module.exports = {
       }
     }
 
-    /* ───── All Commands List (No Page) ───── */
-    let msg = `✨ 𝗠 𝗜 𝗟 𝗢 𝗡 ✦  𝗖 𝗢 𝗠 𝗠 𝗔 𝗡 𝗗 𝗦 ✨\n`;
-    msg += `✧･ﾟ: *✧･ﾟ:* ༻ ༺ *:･ﾟ✧*:･ﾟ✧\n\n`;
+    /* ───── Professional Commands List ───── */
+    const basicCommands = [];
+    const botCommands = [];
 
-    const sortedCategories = Object.keys(categoriesMap).sort();
+    for (const [name, cmd] of commands) {
+      if (!cmd?.config) continue;
 
-    for (const cat of sortedCategories) {
-      const catDisplay = fontConvert(cat.toUpperCase(), "category");
-      const emoji = getCategoryEmoji(cat);
-      const cmds = categoriesMap[cat].sort().map(n => fontConvert(n)).join(", ");
+      const requiredRole = getRequiredRole(cmd);
+      if (requiredRole > role) continue;
 
-      msg += `${emoji} ━━━━『 ${catDisplay} 』━━━━ ⦿\n`;
-      msg += `│  ${cmds}\n`;
-      msg += `✧･ﾟ: *✧･ﾟ:* *:･ﾟ✧*:･ﾟ✧\n\n`;
+      const commandName = cmd.config.name || name;
+      if (requiredRole === 0) basicCommands.push(commandName);
+      else botCommands.push(commandName);
     }
 
-    const totalCmds = Object.values(categoriesMap).reduce((a, b) => a + b.length, 0);
+    basicCommands.sort((a, b) => a.localeCompare(b));
+    botCommands.sort((a, b) => a.localeCompare(b));
 
-    msg += `🔰 𝗧𝗶𝗽: 𝗧𝘆𝗽𝗲 ${prefix}𝗵𝗲𝗹𝗽 [𝗰𝗼𝗺𝗺𝗮𝗻𝗱]\n\n`;
-    msg += `🗡️ 𝗖𝗢𝗠𝗠𝗔𝗡𝗗 𝗦𝗬𝗦𝗧𝗘𝗠 🗡️\n𝗧𝗼𝘁𝗮𝗹 𝗰𝗼𝗺𝗺𝗮𝗻𝗱𝘀 » ${totalCmds}\n𝗖𝗮𝘁𝗲𝗴𝗼𝗿𝗶𝗲𝘀 » ${sortedCategories.length}\n👑 Owner: 𝗠𝗶𝗹𝗼𝗻 𝗛𝗮𝘀𝗮𝗻`;
+    const totalCmds = basicCommands.length + botCommands.length;
+    let msg = `╭──────────────╮\n`;
+    msg += `│ 𝙈𝙄𝙇𝙊𝙉 𝘽𝙊𝙏 𝙈𝙀𝙉𝙐 │\n`;
+    msg += `╰──────────────╯\n\n`;
+    msg += `📌 𝙋𝙧𝙚𝙛𝙞𝙭: ${prefix}\n`;
+    msg += `📚 𝙏𝙤𝙩𝙖𝙡: ${totalCmds} 𝙘𝙤𝙢𝙢𝙖𝙣𝙙𝙨\n\n`;
+    msg += `▬▬▬𝘽𝘼𝙎𝙎𝙀𝙏▬▬▬\n\n`;
+    msg += `${formatCommandRows(basicCommands)}\n\n`;
+    msg += `▬▬▬▬▬ 𝘽𝙊𝙏▬▬▬▬\n\n`;
+    msg += `${formatCommandRows(botCommands)}\n\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `💡 ${prefix}help <command> لمعرفة تفاصيل أي أمر`;
 
     return message.reply(msg);
   }
