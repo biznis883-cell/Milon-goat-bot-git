@@ -64,12 +64,12 @@ function findCommand(name) {
 
 function formatCommandRows(commandNames) {
   const rows = [];
-  const columnWidth = 30;
+  const columnWidth = 24;
 
   for (let i = 0; i < commandNames.length; i += 2) {
-    const left = `𝘾𝙢𝙙. ${fontConvert(commandNames[i])}`;
+    const left = fontConvert(commandNames[i]);
     const right = commandNames[i + 1]
-      ? `𝘾𝙢𝙙. ${fontConvert(commandNames[i + 1])}`
+      ? fontConvert(commandNames[i + 1])
       : "";
 
     rows.push(`${left.padEnd(columnWidth)}${right}`.trimEnd());
