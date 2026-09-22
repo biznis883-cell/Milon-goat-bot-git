@@ -2,266 +2,171 @@ const axios = require("axios");
 const fs = require("fs-extra");
 const path = require("path");
 
-const apiUrl = "https://www.noobs-apis.run.place";
+const SEARCH_API = "https://betadash-search-download.vercel.app/yt";
+const DOWNLOAD_API = "https://yt-mp3-imran.vercel.app/api";
+const YOUTUBE_URL = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)[\w-]{6,}/i;
 
 module.exports.config = {
   name: "sing",
   aliases: ["music"],
-  version: "1.6.9",
-  author: "Nazrul",
+  version: "2.0.0",
+  author: "Milon",
   role: 0,
-  description: "Search & download MP3, Shazam recognize, YouTube info",
+  shortDescription: "Search and download MP3 songs",
+  longDescription: "Search YouTube songs, download them as MP3, or use a YouTube link.",
   category: "media",
   countDown: 7,
   guide: {
-    en: "{pn} query - Reply With Number!\n{pn} reply to Media!"
+    en: "{pn} <song name>\n{pn} <YouTube URL>\nReply with a number to download a search result."
   }
 };
 
 module.exports.onStart = async function ({ message, event, args }) {
-  if (event.messageReply) {
-    const replyMsg = event.messageReply;
-    if (replyMsg.attachments && replyMsg.attachments[0]) {
-      const att = replyMsg.attachments[0];
-      const url = att.url;
-      if (/audio|video|.mp3|.mp4|.m4a|.mov/.test(att.type || url)) return shazam(message, event, url);
-      if (/(youtu\.be|youtube\.com)/.test(url)) {
-        if (args[0] === "-info") return vInfo(message, event, url);
-        return downloadMP3(message, event, url, "YouTube Audio", "", "", "");
-      }
-    }
-    if (replyMsg.body) {
-      const ytMatch = replyMsg.body.match(/(https?:\/\/(www\.)?(youtube\.com|youtu\.be)\/\S+)/);
-      if (ytMatch) {
-        const ytUrl = ytMatch[0];
-        if (args[0] === "-info") return vInfo(message, event, ytUrl);
-        return downloadMP3(message, event, ytUrl, "✅ Downloaded", "", "", "");
-      }
-    }
-  }
-  if (!args[0]) return message.reply("Required Song name!");
-  if (args[0] === "-info") {
-    const url = args[1];
-    if (!url || !/(youtu\.be|youtube\.com)/.test(url)) return message.reply("Provide a valid YouTube URL after -info!");
-    return vInfo(message, event, url);
-  }
-  if (/(youtu\.be|youtube\.com)/.test(args[0])) {
-    const url = args[0];
-    return downloadMP3(message, event, url, "YouTube Audio", "", "", "");
-  }
-  const query = args.join(" ");
+  const reply = event.messageReply;
+  const replyUrl = extractYoutubeUrl(reply?.body);
+  const requestedUrl = extractYoutubeUrl(args.join(" "));
+  const infoMode = args[0]?.toLowerCase() === "-info";
+
+  if (replyUrl && (infoMode || !args.length))
+    return infoMode ? showInfo(message, event, replyUrl) : downloadSong(message, event, replyUrl);
+
+  if (requestedUrl)
+    return infoMode ? showInfo(message, event, requestedUrl) : downloadSong(message, event, requestedUrl);
+
+  if (reply?.attachments?.length && !args.length)
+    return message.reply("⚠️ Reply with a song name or a YouTube link. Direct audio recognition is not available right now.");
+
+  const query = (infoMode ? args.slice(1) : args).join(" ").trim();
+  if (!query)
+    return message.reply("❌ Please provide a song name or YouTube URL.");
+
   return searchSong(message, event, query);
 };
 
-async function shazam(message, event, fileUrl) {
-  await message.reaction("⏳", event.messageID);
-  try {
-    const ok = await axios.get(`${apiUrl}/nazrul/shazamSong-Recognize?url=${encodeURIComponent(fileUrl)}`);
-    const data = ok.data;
-
-    const songTitle = data.title;
-    const artist = data.subtitle || "";
-    
-    const searchQuery = `${songTitle} ${artist}`.trim();
-    return searchAndDownloadAfterShazam(message, event, searchQuery, data);
-    
-  } catch (e) {
-    message.reply("× Failed to recognize the song.");
-    message.reaction("❌", event.messageID);
-    console.log(e);
-  }
-}
-
-async function searchAndDownloadAfterShazam(message, event, query, shazamData) {
-  try {
-    const res = await axios.get(`${apiUrl}/nazrul/youtube?type=s&query=${encodeURIComponent(query)}`);
-    const data = res.data?.results?.data || [];
-    
-    if (!data.length) {
-      return downloadFromAppleMusic(message, event, shazamData);
-    }
-    
-    const video = data[0];
-    
-    const downloadRes = await axios.get(`${apiUrl}/nazrul/youtube?type=mp3&url=${encodeURIComponent(`https://youtu.be/${video.id}`)}`);
-    const downloadUrl = downloadRes.data.download_url;
-    
-    if (!downloadUrl) {
-      return downloadFromAppleMusic(message, event, shazamData);
-    }
-    
-    const file = await axios.get(downloadUrl, { responseType: "arraybuffer" });
-    const fileName = `${video.title.replace(/[^\w]/g, "_")}.mp3`;
-    const filePath = path.join(__dirname, fileName);
-    
-    fs.writeFileSync(filePath, file.data);
-    
-    await message.reaction("✅", event.messageID);
-    
-    await message.reply({
-      body: `✅ Title: ${shazamData.title}\n• Artist: ${shazamData.subtitle || "Unknown"}\n• Album: ${shazamData.album || "Unknown"}\n• Genre: ${shazamData.genre || "Unknown"}\n`,
-      attachment: fs.createReadStream(filePath)
-    });
-    
-    fs.unlinkSync(filePath);
-    
-  } catch (e) {
-    return downloadFromAppleMusic(message, event, shazamData);
-  }
-}
-
-async function downloadFromAppleMusic(message, event, shazamData) {
-  try {
-    const songURL = shazamData.apple_music_url;
-    if (!songURL) throw new Error("No download URL");
-    
-    const tmp = path.join(__dirname, "shazam_" + Date.now() + ".mp3");
-    const w = fs.createWriteStream(tmp);
-    
-    (await axios.get(songURL, { responseType: "stream" })).data.pipe(w);
-    
-    w.on("finish", async () => {
-      await message.reaction("✅", event.messageID);
-      await message.reply({
-        body: `✅ Title: ${shazamData.title}\n• Subtitle: ${shazamData.subtitle}\n• Album: ${shazamData.album}\n#• Genre: ${shazamData.genre}\n`,
-        attachment: fs.createReadStream(tmp)
-      });
-      fs.unlinkSync(tmp);
-    });
-    
-    w.on("error", () => {
-      message.reply("✅ Song recognized but couldn't download the song.\nTitle: " + shazamData.title + "\nArtist: " + shazamData.subtitle);
-      message.reaction("❌", event.messageID);
-    });
-    
-  } catch (e) {
-    message.reply("✅ Song recognized: " + shazamData.title + "\nArtist: " + (shazamData.subtitle || "Unknown") + "\nBut failed to download the song.");
-    message.reaction("❌", event.messageID);
-  }
-}
-
-async function vInfo(message, event, url) {
-  await message.reaction("⏳", event.messageID);
-
-  try {
-    const res = await axios.get(`${apiUrl}/nazrul/youtube?type=info&url=${encodeURIComponent(url)}`);
-    const data = res.data?.video;
-
-    if (!data) return message.send("❌ Failed to fetch info!");
-
-    const v = data.video || data;
-    const c = data.channel;
-
-    const duration = v.duration?.replace("PT", "").replace("H", ":").replace("M", ":").replace("S", "") || "N/A";
-    const info =
-`✅ ${v.title}\n• Channel: ${c.title || "Unknown"}\n• Views: ${v.viewCount || "N/A"}\n• Likes: ${v.likeCount || "N/A"}\n• Duration: ${duration}\n• Uploaded by: ${c.title}`;
-
-    const thumbUrl = v.thumbnails?.maxres?.url || v.thumbnails?.high?.url;
-    const thumbPath = path.join(__dirname, "info_thumb.jpg");
-    const writer = fs.createWriteStream(thumbPath);
-
-    const img = (await axios.get(thumbUrl, { responseType: "stream" })).data;
-    img.pipe(writer);
-
-    await new Promise(r => writer.on("finish", r));
-
-    await message.reaction("✅", event.messageID);
-    await message.reply({ body: info, attachment: fs.createReadStream(thumbPath) });
-
-    fs.unlinkSync(thumbPath);
-  } catch (e) {
-    message.reaction("❌", event.messageID);
-    console.log(e);
-  }
-}
-
-async function searchSong(message, event, query) {
-  await message.reaction("⏳", event.messageID);
-
-  try {
-    const res = await axios.get(`${apiUrl}/nazrul/youtube?type=s&query=${encodeURIComponent(query)}`);
-    const data = res.data?.results?.data || [];
-    if (!data.length) return message.reply("× No results Returned.");
-
-    let txt = "✅ Here's Search Results:\n\n";
-    const thumbs = [];
-
-    for (let i = 0; i < Math.min(data.length, 10); i++) {
-      const v = data[i];
-      txt += `${i + 1}. ${v.title}\n• Duration: ${v.duration || "Not found!"}\n• PublishedAt: ${v.publishedAt || "Not found"}\n\n`;
-
-      const imgUrl = v.thumbHigh || v.thumbMedium || v.thumbDefault;
-      const imgPath = path.join(__dirname, `yt_${i + 1}.jpg`);
-      const img = await axios.get(imgUrl, { responseType: "arraybuffer" });
-
-      fs.writeFileSync(imgPath, img.data);
-      thumbs.push(fs.createReadStream(imgPath));
-    }
-
-    txt += "• Reply with a number to Get Song.";
-
-    message.reaction("✅", event.messageID);
-
-    message.reply({ body: txt, attachment: thumbs }, (err, info) => {
-      if (err) return;
-
-      global.GoatBot.onReply.set(info.messageID, {
-        commandName: module.exports.config.name,
-        type: "search",
-        messageID: info.messageID,
-        author: event.senderID,
-        results: data
-      });
-    });
-
-  } catch (e) {
-    message.reaction("❌", event.messageID);
-    console.log(e);
-  }
-}
-
 module.exports.onReply = async function ({ event, message, Reply }) {
-  const { type, results, messageID, author } = Reply;
+  if (String(event.senderID) !== String(Reply.author))
+    return;
 
-  if (event.senderID != author) return;
+  const choice = Number.parseInt(String(event.body || "").trim(), 10);
+  if (!Number.isInteger(choice) || choice < 1 || choice > Reply.results.length)
+    return message.reply(`❌ Reply with a number between 1 and ${Reply.results.length}.`);
 
-  if (type === "search") {
-    const num = parseInt(event.body.trim());
-    if (isNaN(num) || num < 1 || num > results.length)
-      return message.reply("• Reply with a valid number.");
-
-    const video = results[num - 1];
-    message.unsend(messageID);
-
-    return downloadMP3(message, event, `https://youtu.be/${video.id}`, video.title, video.duration, video.publishedAt, video.viewCount);
-  }
+  const selected = Reply.results[choice - 1];
+  await message.unsend(Reply.messageID);
+  return downloadSong(message, event, selected.url, selected.title, selected.time);
 };
 
-async function downloadMP3(message, event, url, title, duration, publishedAt, viewCount) {
-  await message.reaction("⏳", event.messageID);
+async function searchSong(message, event, query) {
+  await setReaction(message, event, "⏳");
 
   try {
-    const res = await axios.get(`${apiUrl}/nazrul/youtube?type=mp3&url=${encodeURIComponent(url)}`);
-    const downloadUrl = res.data.download_url;
-    if (!downloadUrl) return message.send("Download link not found!");
+    const response = await axios.get(SEARCH_API, {
+      params: { search: query },
+      timeout: 20000
+    });
+    const results = (Array.isArray(response.data) ? response.data : [])
+      .filter(item => item?.url && item?.title)
+      .slice(0, 10);
 
-    const file = await axios.get(downloadUrl, { responseType: "arraybuffer" });
+    if (!results.length)
+      return message.reply("❌ No songs found. Try another search.");
 
-    const fileName = `${title.replace(/[^\w]/g,"_")}.mp3`;
-    const filePath = path.join(__dirname, fileName);
+    const body = results
+      .map((item, index) => `${index + 1}. ${item.title}\n   ⏱️ ${item.time || "Unknown duration"}`)
+      .join("\n\n");
 
-    fs.writeFileSync(filePath, file.data);
-
-    await message.reaction("✅", event.messageID);
-
-    await message.reply({
-      body: `✅ ${title || "Not Found!"}\n• Duration: ${duration || "Not Found!"}\n• Views: ${viewCount || "Not found!"}\n• PublishedAt: ${publishedAt || "Not found!"}`,
-      attachment: fs.createReadStream(filePath)
+    const sent = await message.reply({
+      body: `🎵 Search results for: ${query}\n\n${body}\n\n↩️ Reply with a number to download.`
     });
 
-    fs.unlinkSync(filePath);
-  } catch (e) {
-    message.reaction("❌", event.messageID);
-    console.log(e);
+    if (sent?.messageID) {
+      global.GoatBot.onReply.set(sent.messageID, {
+        commandName: module.exports.config.name,
+        messageID: sent.messageID,
+        author: event.senderID,
+        results
+      });
+    }
+    await setReaction(message, event, "✅");
+  }
+  catch (error) {
+    await setReaction(message, event, "❌");
+    console.error("[sing] Search failed:", error.message);
+    return message.reply("❌ Search is temporarily unavailable. Please try again later.");
+  }
+}
+
+async function downloadSong(message, event, url, fallbackTitle = "YouTube Audio", duration = "") {
+  await setReaction(message, event, "⏳");
+  const cacheDir = path.join(__dirname, "cache");
+  await fs.ensureDir(cacheDir);
+  const filePath = path.join(cacheDir, `sing_${Date.now()}_${Math.floor(Math.random() * 10000)}.mp3`);
+
+  try {
+    const downloadResponse = await axios.get(DOWNLOAD_API, {
+      params: { url },
+      timeout: 30000
+    });
+    const downloadUrl = downloadResponse.data?.downloadUrl || downloadResponse.data?.download_url;
+    const title = downloadResponse.data?.info?.title || fallbackTitle;
+
+    if (!downloadUrl)
+      throw new Error("Download link not found");
+
+    const file = await axios.get(downloadUrl, {
+      responseType: "arraybuffer",
+      timeout: 60000
+    });
+    await fs.writeFile(filePath, file.data);
+
+    await setReaction(message, event, "✅");
+    await message.reply({
+      body: `✅ ${title}\n⏱️ ${duration || "Audio"}`,
+      attachment: fs.createReadStream(filePath)
+    });
+  }
+  catch (error) {
+    await setReaction(message, event, "❌");
+    console.error("[sing] Download failed:", error.message);
+    return message.reply("❌ I couldn't download this song. Try another link or search.");
+  }
+  finally {
+    await fs.remove(filePath).catch(() => {});
+  }
+}
+
+async function showInfo(message, event, url) {
+  try {
+    const response = await axios.get(DOWNLOAD_API, {
+      params: { url },
+      timeout: 30000
+    });
+    const info = response.data?.info;
+    if (!info?.title)
+      throw new Error("Video information not found");
+
+    return message.reply(
+      `🎵 ${info.title}\n` +
+      `👤 Author: ${info.author || "Unknown"}\n` +
+      `🔗 ${url}`
+    );
+  }
+  catch (error) {
+    console.error("[sing] Info lookup failed:", error.message);
+    return message.reply("❌ I couldn't read information for this YouTube link.");
+  }
+}
+
+function extractYoutubeUrl(text = "") {
+  const match = String(text).match(YOUTUBE_URL);
+  return match ? match[0].replace(/[),.]+$/, "") : null;
+}
+
+async function setReaction(message, event, emoji) {
+  try {
+    await message.reaction(emoji, event.messageID);
+  }
+  catch (error) {
+    console.error("[sing] Reaction failed:", error.message);
   }
 }
