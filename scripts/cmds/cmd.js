@@ -40,11 +40,13 @@ module.exports = {
 			vi: "   {pn} load <tên file lệnh>"
 				+ "\n   {pn} loadAll"
 				+ "\n   {pn} install <url> <tên file lệnh>: Tải xuống và cài đặt một tệp lệnh từ một url, url là đường dẫn đến tệp lệnh (raw)"
-				+ "\n   {pn} install <tên file lệnh> <code>: Tải xuống và cài đặt một tệp lệnh từ một code, code là mã của lệnh",
+				+ "\n   {pn} install <tên file lệnh> <code>: Tải xuống và cài đặt một tệp lệnh từ một code, code là mã của lệnh"
+				+ "\n   {pn} upload [tên file]: cài đặt tệp .js được gửi kèm hoặc trả lời trong nhóm",
 			en: "   {pn} load <command file name>"
 				+ "\n   {pn} loadAll"
 				+ "\n   {pn} install <url> <command file name>: Download and install a command file from a url, url is the path to the file (raw)"
 				+ "\n   {pn} install <command file name> <code>: Download and install a command file from a code, code is the code of the command"
+				+ "\n   {pn} upload [file name]: install a .js file attached to or replied to in the group"
 		}
 	},
 
@@ -157,64 +159,88 @@ module.exports = {
 				message.reply(getLang("unloaded", infoUnload.name)) :
 				message.reply(getLang("unloadedError", infoUnload.name, infoUnload.error.name, infoUnload.error.message));
 		}
-		else if (args[0] == "install") {
+		else if (args[0] == "install" || args[0] == "upload") {
 			let url = args[1];
 			let fileName = args[2];
 			let rawCode;
 
-			if (!url || !fileName)
-				return message.reply(getLang("missingUrlCodeOrFileName"));
+			if (args[0] == "upload") {
+				const attachment = event.messageReply?.attachments?.[0] || event.attachments?.[0];
+				if (!attachment?.url)
+					return message.reply("📎 Reply to a JavaScript file or attach one with the command.");
 
-			if (
-				url.endsWith(".js")
-				&& !isURL(url)
-			) {
-				const tmp = fileName;
-				fileName = url;
-				url = tmp;
-			}
+				const requestedName = args[1] || attachment.name || attachment.filename || "uploaded-command.js";
+				fileName = path.basename(requestedName);
+				if (!fileName.endsWith(".js"))
+					fileName += ".js";
+				if (!/^[a-zA-Z0-9_-]+\.js$/.test(fileName))
+					return message.reply(getLang("invalidFileName"));
 
-			if (url.match(/(https?:\/\/(?:www\.|(?!www)))/)) {
-				global.utils.log.dev("install", "url", url);
-				if (!fileName || !fileName.endsWith(".js"))
-					return message.reply(getLang("missingFileNameInstall"));
-
-				const domain = getDomain(url);
-				if (!domain)
-					return message.reply(getLang("invalidUrl"));
-
-				if (domain == "pastebin.com") {
-					const regex = /https:\/\/pastebin\.com\/(?!raw\/)(.*)/;
-					if (url.match(regex))
-						url = url.replace(regex, "https://pastebin.com/raw/$1");
-					if (url.endsWith("/"))
-						url = url.slice(0, -1);
+				try {
+					rawCode = (await axios.get(attachment.url, { responseType: "text" })).data;
+					if (!rawCode || rawCode.length > 100000)
+						return message.reply("❌ The command file is empty or larger than 100 KB.");
+					new Function(rawCode);
 				}
-				else if (domain == "github.com") {
-					const regex = /https:\/\/github\.com\/(.*)\/blob\/(.*)/;
-					if (url.match(regex))
-						url = url.replace(regex, "https://raw.githubusercontent.com/$1/$2");
-				}
-
-				rawCode = (await axios.get(url)).data;
-
-				if (domain == "savetext.net") {
-					const $ = cheerio.load(rawCode);
-					rawCode = $("#content").text();
+				catch (error) {
+					return message.reply(`❌ Invalid command file: ${error.message}`);
 				}
 			}
 			else {
-				global.utils.log.dev("install", "code", args.slice(1).join(" "));
-				if (args[args.length - 1].endsWith(".js")) {
-					fileName = args[args.length - 1];
-					rawCode = event.body.slice(event.body.indexOf('install') + 7, event.body.indexOf(fileName) - 1);
+				if (!url || !fileName)
+					return message.reply(getLang("missingUrlCodeOrFileName"));
+
+				if (
+					url.endsWith(".js")
+					&& !isURL(url)
+				) {
+					const tmp = fileName;
+					fileName = url;
+					url = tmp;
 				}
-				else if (args[1].endsWith(".js")) {
-					fileName = args[1];
-					rawCode = event.body.slice(event.body.indexOf(fileName) + fileName.length + 1);
+
+				if (url.match(/(https?:\/\/(?:www\.|(?!www)))/)) {
+					global.utils.log.dev("install", "url", url);
+					if (!fileName || !fileName.endsWith(".js"))
+						return message.reply(getLang("missingFileNameInstall"));
+
+					const domain = getDomain(url);
+					if (!domain)
+						return message.reply(getLang("invalidUrl"));
+
+					if (domain == "pastebin.com") {
+						const regex = /https:\/\/pastebin\.com\/(?!raw\/)(.*)/;
+						if (url.match(regex))
+							url = url.replace(regex, "https://pastebin.com/raw/$1");
+						if (url.endsWith("/"))
+							url = url.slice(0, -1);
+					}
+					else if (domain == "github.com") {
+						const regex = /https:\/\/github\.com\/(.*)\/blob\/(.*)/;
+						if (url.match(regex))
+							url = url.replace(regex, "https://raw.githubusercontent.com/$1/$2");
+					}
+
+					rawCode = (await axios.get(url)).data;
+
+					if (domain == "savetext.net") {
+						const $ = cheerio.load(rawCode);
+						rawCode = $("#content").text();
+					}
 				}
-				else
-					return message.reply(getLang("missingFileNameInstall"));
+				else {
+					global.utils.log.dev("install", "code", args.slice(1).join(" "));
+					if (args[args.length - 1].endsWith(".js")) {
+						fileName = args[args.length - 1];
+						rawCode = event.body.slice(event.body.indexOf('install') + 7, event.body.indexOf(fileName) - 1);
+					}
+					else if (args[1].endsWith(".js")) {
+						fileName = args[1];
+						rawCode = event.body.slice(event.body.indexOf(fileName) + fileName.length + 1);
+					}
+					else
+						return message.reply(getLang("missingFileNameInstall"));
+				}
 			}
 
 			if (!rawCode)
