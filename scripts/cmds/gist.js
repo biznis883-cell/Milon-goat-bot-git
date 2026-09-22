@@ -1,4 +1,4 @@
-×cmd install gist.js const fs = require('fs');
+const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const baseApiUrl = async () => {
