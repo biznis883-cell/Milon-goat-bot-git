@@ -178,4 +178,33 @@ if (type === "audio") {
 const fileId = driveAudioIds[surahNum];
 if (!fileId) return message.reply("❌ এই সূরার অডিও এখনো যুক্ত হয়নি।");
 
-const audioUrl = `https://docs.google.com/uc?export=download&i
+const audioUrl = `https://docs.google.com/uc?export=download&id=${fileId}`;
+
+try {
+const response = await axios.get(audioUrl, { responseType: "stream" });
+return message.reply({
+body: `🎧 ${surahMap[surahNum][0]} - ${surahMap[surahNum][1]}`,
+attachment: response.data
+});
+} catch (error) {
+console.error("[quran] Audio download failed:", error.message);
+return message.reply("❌ تعذر تحميل صوت هذه السورة حاليًا.");
+}
+}
+
+try {
+const response = await axios.get(`https://api.alquran.cloud/v1/surah/${surahNum}/quran-uthmani`);
+const ayahs = response.data?.data?.ayahs || [];
+if (!ayahs.length) throw new Error("No ayahs returned");
+
+const title = `📖 ${surahMap[surahNum][0]} - ${surahMap[surahNum][1]}\n\n`;
+const text = ayahs
+  .map(ayah => `${ayah.text} ﴿${ayah.numberInSurah}﴾`)
+  .join("\n");
+return message.reply(title + text);
+} catch (error) {
+console.error("[quran] Text lookup failed:", error.message);
+return message.reply("❌ تعذر جلب آيات هذه السورة حاليًا.");
+}
+}
+};
