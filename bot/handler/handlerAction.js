@@ -16,6 +16,16 @@ module.exports = (api, threadModel, userModel, dashBoardModel, globalModel, user
 		)
 			return;
 
+		// When message mode is off, completely silence the bot for non-bot-admins.
+		// Bot admins remain able to use the control command and other admin tools.
+		const adminBotIDs = (global.GoatBot.config.adminBot || []).map(id => String(id)).filter(Boolean);
+		const senderID = String(event.senderID || event.userID || event.author || "");
+		if (
+			global.GoatBot.config.messageMode === false
+			&& !adminBotIDs.includes(senderID)
+		)
+			return;
+
 		const message = createFuncMessage(api, event);
 
 		await handlerCheckDB(usersData, threadsData, event);
