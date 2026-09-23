@@ -1,4 +1,4 @@
-const { getPrefix } = global.utils;
+const { getPrefix, getStreamFromURL } = global.utils;
 const { commands } = global.GoatBot;
 
 function getRequiredRole(command) {
@@ -54,7 +54,7 @@ module.exports = {
 	config: {
 		name: "help",
 		aliases: ["menu", "commands"],
-		version: "3.0",
+		version: "3.1",
 		author: "Bassit Bot",
 		role: 0,
 		category: "info",
@@ -170,17 +170,13 @@ ${c.author || "Bassit Bot"}
 				command.config.name || name;
 
 			if (requiredRole === 0) {
-
 				userCommands.push(commandName);
-
-			} else if (requiredRole === 1) {
-
+			}
+			else if (requiredRole === 1) {
 				adminCommands.push(commandName);
-
-			} else {
-
+			}
+			else {
 				botAdminCommands.push(commandName);
-
 			}
 		}
 
@@ -197,17 +193,15 @@ ${c.author || "Bassit Bot"}
 		// BUILD MENU
 		// =========================
 
-		let msg = "";
-
-		msg +=
+		let msg =
 `╭━━━━━━━━━━━━━━━━━━━━╮
 │   📜 𝐁𝐀𝐒𝐒𝐈𝐓 𝐁𝐎𝐓
 │      𝐂𝐎𝐌𝐌𝐀𝐍𝐃𝐒
 ╰━━━━━━━━━━━━━━━━━━━━╯
 
-🤖 Bot : BASSIT BOT
-📌 Prefix : ${prefix}
-📚 Total Commands : ${total}
+🤖 𝐁𝐨𝐭 : 𝐁𝐀𝐒𝐒𝐈𝐓 𝐁𝐎𝐓
+📌 𝐏𝐫𝐞𝐟𝐢𝐱 : ${prefix}
+📚 𝐓𝐨𝐭𝐚𝐥 𝐂𝐨𝐦𝐦𝐚𝐧𝐝𝐬 : ${total}
 
 ━━━━━━━━━━━━━━━━━━━━
         👤 𝐔𝐒𝐄𝐑
@@ -225,7 +219,7 @@ ${c.author || "Bassit Bot"}
 
 		} else {
 
-			msg += "لا توجد أوامر.";
+			msg += "𝐍𝐨 𝐜𝐨𝐦𝐦𝐚𝐧𝐝𝐬 𝐚𝐯𝐚𝐢𝐥𝐚𝐛𝐥𝐞.";
 		}
 
 		if (adminCommands.length) {
@@ -268,10 +262,34 @@ ${c.author || "Bassit Bot"}
 `
 
 ━━━━━━━━━━━━━━━━━━━━
-💡 ${prefix}help <command>
-📖 لمعرفة تفاصيل أي أمر
+💡 ✦ 𝐔𝐬𝐞 ${prefix}𝐡𝐞𝐥𝐩 <𝐜𝐨𝐦𝐦𝐚𝐧𝐝> ✦
 ━━━━━━━━━━━━━━━━━━━━`;
 
-		return message.reply(msg);
+		// =========================
+		// SEND IMAGE + MENU
+		// =========================
+
+		const imageURL =
+			"https://i.postimg.cc/zqfxG40H/converted.gif";
+
+		try {
+
+			const imageStream =
+				await getStreamFromURL(imageURL);
+
+			return message.reply({
+				body: msg,
+				attachment: imageStream
+			});
+
+		} catch (error) {
+
+			console.error(
+				"Help image error:",
+				error
+			);
+
+			return message.reply(msg);
+		}
 	}
 };
